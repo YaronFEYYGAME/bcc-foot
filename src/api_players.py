@@ -49,3 +49,49 @@ def get_worldcup_squad(team_code: str) -> list:
     """Récupère le squad CdM 2026 d'une équipe."""
     data = safe_request(f"{BASE_URL_V2}/worldcup/squads/", {"team": team_code})
     return data.get("results", [])
+
+
+def get_player_aggregated_stats(player_id: int) -> dict:
+    """Récupère et agrège les stats par match d'un joueur (totaux + moyennes)."""
+    raw = get_player_stats(player_id)
+
+    # L'API peut retourner une liste de matchs ou un dict avec "results"
+    matches = raw if isinstance(raw, list) else raw.get("results", [])
+
+    if not matches:
+        return {}
+
+    # Champs à cumuler
+    sum_fields = [
+        "goals", "goal_assist", "total_shots", "shots_on_target",
+        "key_pass", "total_pass", "accurate_pass", "total_contest",
+        "won_contest", "duel_won", "duel_lost", "aerial_won", "aerial_lost",
+        "total_tackle", "won_tackle", "interception", "ball_recovery",
+        "was_fouled", "fouls", "yellow_card", "red_card", "minutes_played",
+        "touches", "dispossessed", "possession_lost",
+    ]
+    # Champs à moyenner
+    avg_fields = ["rating", "expected_goals", "expected_assists"]
+
+    n = len(matches)
+    agg = {"matches_played": n}
+
+    for f in sum_fields:
+        agg[f] = sum(m.get(f, 0) or 0 for m in matches)
+
+    for f in avg_fields:
+        vals = [m.get(f, 0) or 0 for m in matches]
+        agg[f] = round(sum(vals) / n, 2) if n else 0
+
+    # Moyennes par match pour les champs cumulés principaux
+    agg["goals_per_match"] = round(agg["goals"] / n, 2) if n else 0
+    agg["assists_per_match"] = round(agg["goal_assist"] / n, 2) if n else 0
+    agg["shots_per_match"] = round(agg["total_shots"] / n, 2) if n else 0
+
+    # Précision de passes en %
+    if agg["total_pass"] > 0:
+        agg["pass_accuracy"] = round(100 * agg["accurate_pass"] / agg["total_pass"], 1)
+    else:
+        agg["pass_accuracy"] = 0
+
+    return agg
